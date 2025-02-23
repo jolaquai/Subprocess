@@ -35,20 +35,15 @@
     <RootNamespace>Subprocess</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Remove="SatelliteExecutableDebug.exe" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="SatelliteExecutable$(Configuration).exe" LogicalName="SatelliteExecutable" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Subprocess.Core\Subprocess.Core.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Update="RuntimeResources.Designer.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>RuntimeResources.resx</DependentUpon>
-    </Compile>
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Update="RuntimeResources.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>RuntimeResources.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
   </ItemGroup>
 
   <Target BeforeTargets="Restore" Name="BuildSatelliteExecutable">

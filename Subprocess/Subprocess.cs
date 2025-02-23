@@ -1,7 +1,9 @@
 ﻿using System.Diagnostics;
+using System.IO.Compression;
 using System.IO.Pipes;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 
 using Subprocess.Core;
 
@@ -82,6 +84,12 @@ public class Subprocess
     public SubprocessAwaiter ConfigureAwait(ConfigureAwaitOptions options) => new SubprocessAwaiter(this, options);
     #endregion
 
+    private static readonly HttpClient _nugetClient = new HttpClient()
+    {
+        BaseAddress = new Uri("https://api.nuget.org/v3-flatcontainer/"),
+        Timeout = TimeSpan.FromSeconds(30),
+        MaxResponseContentBufferSize = int.MaxValue
+    };
     private static readonly Exception _unusable;
     private static readonly Mutex _mutex = new Mutex(false, "Subprocess.Mutex");
     private static readonly string _tempPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Subprocess", "SatelliteExecutable.exe");
@@ -92,24 +100,21 @@ public class Subprocess
             throw new NotSupportedException("The Subprocess class is not usable due to an initialization error. Refer to the inner exception for more details.", _unusable);
         }
     }
+
+    const string resName = "SatelliteExecutable";
     static Subprocess()
     {
+        using var asm = typeof(Subprocess).Assembly.GetManifestResourceStream(resName);
+
         try
         {
             _ = _mutex.WaitOne();
 
             // Initialize by unpacking the prepared worker executable from our own resources
-            if (!File.Exists(_tempPath))
+            Directory.CreateDirectory(Path.GetDirectoryName(_tempPath));
+            using (var file = File.Create(_tempPath))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(_tempPath));
-                using (var file = File.Create(_tempPath))
-                {
-#if DEBUG
-                    file.Write(RuntimeResources.SatelliteExecutableDebug);
-#else
-                    file.Write(RuntimeResources.SatelliteExecutableRelease);
-#endif
-                }
+                asm.CopyTo(file);
             }
         }
         catch (Exception ex) // Prevent throwing a TypeInitializationException, we'll pack that into EnsureUsable later
@@ -125,13 +130,12 @@ public class Subprocess
     /// <summary>
     /// Creates a new <see cref="Subprocess"/> instance that executes the provided IL in a separate process.
     /// </summary>
-    /// <param name="base64il">The Base64-encoded IL to execute in the subprocess. The method represented by that IL must match the signature of the <see cref="SubprocessWork"/> delegate, be static and have no external references, otherwise it cannot be rewritten into an executable method.</param>
-    /// <param name="base64args">The Base64-encoded arguments to pass to the method.</param>
-    internal Subprocess(string base64il, string base64args)
+    /// <param name="dataPath">The path to the directory containing the data for the subprocess. Should be provided by <see cref="CreateAsync(MethodInfo, object[], ValueTuple{string, Version, bool}[], string[])"/>.</param>
+    /// <param name="pipeName">The name of the pipe to use for communication with the subprocess. Should be provided by <see cref="CreateAsync(MethodInfo, object[], ValueTuple{string, Version, bool}[], string[])"/>.</param>
+    internal Subprocess(string dataPath, string pipeName)
     {
         EnsureUsable();
 
-        var pipeName = Guid.NewGuid().ToString();
         _pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         Writer = new StreamWriter(_pipe, leaveOpen: true);
         Reader = new StreamReader(_pipe, leaveOpen: true);
@@ -143,9 +147,7 @@ public class Subprocess
                 FileName = _tempPath,
                 ArgumentList =
                 {
-                    base64il,
-                    pipeName,
-                    base64args
+                    dataPath
                 },
                 UseShellExecute = false,
                 RedirectStandardOutput = false,
@@ -208,22 +210,24 @@ public class Subprocess
     /// <exception cref="ArgumentException">Thrown when the provided method is not static, does not have a body, or could not be converted into a <see cref="SubprocessWork"/> delegate.</exception>
     public static async Task<Subprocess> RunAsync(MethodInfo method, object[] arguments)
     {
-        var sp = Create(method, arguments);
+        var sp = await CreateAsync(method, arguments);
         await sp.StartAsync();
         return sp;
     }
     /// <summary>
     /// Creates a new <see cref="Subprocess"/> instance that executes the provided method with the provided arguments.
     /// </summary>
-    /// <param name="method">The method to execute in the subprocess. It must be static and have no external references, otherwise it cannot be rewritten into an executable method.</param>
+    /// <param name="method">The method to execute in the subprocess. It must be static.</param>
     /// <param name="arguments">The arguments to pass to the method.</param>
+    /// <param name="packages">NuGet packages to download, unpack and load into the host assembly of the subprocess.</param>
+    /// <param name="assemblies">Paths to DLLs to load into the host assembly of the subprocess.</param>
     /// <returns>A <see cref="Subprocess"/> instance that represents the subprocess.</returns>
     /// <exception cref="ArgumentException">Thrown when the provided method is not static, does not have a body, or could not be converted into a <see cref="SubprocessWork"/> delegate.</exception>
-    public static Subprocess Create(MethodInfo method, object[] arguments)
+    public static async Task<Subprocess> CreateAsync(MethodInfo method, object[] arguments, (string, Version, bool)[] packages = null, string[] assemblies = null)
     {
         if (!method.IsStatic)
         {
-            throw new ArgumentException("The method to execute must be static and have zero external references to execute in a Subprocess, otherwise the IL cannot be rewritten into an executable method.", nameof(method));
+            throw new ArgumentException("The method to execute must be static, otherwise the IL cannot be rewritten into an executable method.", nameof(method));
         }
 
         SubprocessWork delg;
@@ -236,13 +240,91 @@ public class Subprocess
             throw new ArgumentException("The provided method could not be converted into a SubprocessWork delegate. Make sure it matches the delegate type's signature.", nameof(method), ex);
         }
 
+        var opId = Guid.NewGuid().ToString();
+        var dataPath = Path.Combine(Path.GetTempPath(), opId);
+        Directory.CreateDirectory(dataPath);
+
         var body = method.GetMethodBody() ?? throw new ArgumentException("The provided method does not have a body.", nameof(method));
         var bodyArr = body.GetILAsByteArray();
-        var b64il = MessagePackUtil.SerializeBase64(bodyArr);
         Debug.Assert(bodyArr?.Length is > 0);
-        var args = MessagePackUtil.SerializeBase64(arguments);
 
-        return new Subprocess(b64il, args);
+        var pipeName = opId;
+        // Scope the streams away
+        {
+            var ilStream = File.Create(Path.Combine(dataPath, "il.bin"));
+            await using (ilStream.ConfigureAwait(false))
+            {
+                MessagePackUtil.Serialize(bodyArr, ilStream);
+            }
+            var pipeNameStream = File.Create(Path.Combine(dataPath, "pipeName.str"));
+            var writer = new StreamWriter(pipeNameStream, leaveOpen: true);
+            await using (pipeNameStream.ConfigureAwait(false))
+            await using (writer.ConfigureAwait(false))
+            {
+                writer.Write(pipeName);
+            }
+        }
+
+        if (arguments?.Length is > 0)
+        {
+            var argsStream = File.Create(Path.Combine(dataPath, "args.bin"));
+            await using (argsStream.ConfigureAwait(false))
+            {
+                MessagePackUtil.Serialize(arguments, argsStream);
+            }
+        }
+
+        if (packages?.Length is > 0)
+        {
+            await using (var packagesZip = File.Create(Path.Combine(dataPath, "packages.zip")))
+            using (var archive = new ZipArchive(packagesZip, ZipArchiveMode.Update, leaveOpen: true))
+            {
+                for (var i = 0; i < packages.Length; i++)
+                {
+                    var (id, ver, allowGreater) = packages[i];
+                    id = id.ToLowerInvariant();
+
+                    if (allowGreater)
+                    {
+                        var versionsResponse = await _nugetClient.GetStringAsync($"{id}/index.json").ConfigureAwait(false);
+                        using var doc = JsonDocument.Parse(versionsResponse);
+                        ver = doc.RootElement.GetProperty("versions")
+                            .EnumerateArray()
+                            .Select(x => x.GetString())
+                            .Where(v => !v.Contains('-')) // disallow prerelease versions
+                            .Max(v => new Version(v));
+                    }
+
+                    var entry = archive.CreateEntry($"{id}.{ver:3}.nupkg");
+                    await using (var package = await _nugetClient.GetStreamAsync($"{id}/{id}.{ver:3}.nupkg").ConfigureAwait(false))
+                    await using (var entryStream = entry.Open())
+                    {
+                        await package.CopyToAsync(entryStream).ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+
+        if (assemblies?.Length is > 0)
+        {
+            await using (var asmZip = File.Create(Path.Combine(dataPath, "asm.zip")))
+            using (var archive = new ZipArchive(asmZip, ZipArchiveMode.Update, leaveOpen: true))
+            {
+                for (var i = 0; i < assemblies.Length; i++)
+                {
+                    var path = assemblies[i];
+
+                    var entry = archive.CreateEntry(Path.GetFileName(path));
+                    await using (var package = await _nugetClient.GetStreamAsync(path).ConfigureAwait(false))
+                    await using (var entryStream = entry.Open())
+                    {
+                        await package.CopyToAsync(entryStream).ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+
+        return new Subprocess(dataPath, pipeName);
     }
 
     /// <summary>
