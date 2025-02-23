@@ -1,0 +1,58 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PackageVersion>$(CoreVersion)</PackageVersion>
+    <FileVersion>$(CoreVersion)</FileVersion>
+    <AssemblyVersion>$(CoreVersion)</AssemblyVersion>
+    <Version>$(CoreVersion)</Version>
+    <AnalysisLevel>preview-all</AnalysisLevel>
+    <AnalysisMode>all</AnalysisMode>
+    <EnablePreviewFeatures>True</EnablePreviewFeatures>
+    <DebugType>embedded</DebugType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(CoreNoWarn)</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup>
+    <Title>Subprocess</Title>
+    <Authors>$(CoreAuthors)</Authors>
+    <Description>$(CoreDescription)</Description>
+    <Copyright>(C) $(CoreAuthors) 20xx</Copyright>
+    <PackageDescription>Provides the Subprocess library, a Task-like API that allows offloading work into entirely separate processes.</PackageDescription>
+    <PackageId>$(Title)</PackageId>
+    
+    <IncludeSource>True</IncludeSource>
+    <IncludeSymbols>True</IncludeSymbols>
+    <PackageProjectUrl>$(CoreUrl)</PackageProjectUrl>
+    <RepositoryUrl>$(CoreUrl)</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageOutputPath>$(CorePackageOutput)</PackageOutputPath>
+    <RootNamespace>Subprocess</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Subprocess.Core\Subprocess.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Update="RuntimeResources.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>RuntimeResources.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Update="RuntimeResources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>RuntimeResources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <Target BeforeTargets="Restore" Name="BuildSatelliteExecutable">
+      <!-- Publish ..\Subprocess.SatelliteExecutable\Subprocess.SatelliteExecutable.csproj -->
+    <MSBuild Projects="..\Subprocess.SatelliteExecutable\Subprocess.SatelliteExecutable.csproj" Targets="Publish" Properties="Configuration=$(Configuration)" />
+  </Target>
+</Project>

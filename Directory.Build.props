@@ -1,0 +1,11 @@
+<Project>
+    <PropertyGroup>
+        <CoreNoWarn>$(NoWarn);CS8714;IDE0290;IDE0045;IDE0046</CoreNoWarn>
+        <CoreVersion>1.0.0</CoreVersion>
+        <CorePackageOutput>$(SolutionDir)pack</CorePackageOutput>
+        <EnablePreviewFeatures>True</EnablePreviewFeatures>
+
+        <CoreAuthors>Joshua Laquai</CoreAuthors>
+        <CoreUrl>https://github.com/jolaquai/Subprocess</CoreUrl>
+    </PropertyGroup>
+</Project>

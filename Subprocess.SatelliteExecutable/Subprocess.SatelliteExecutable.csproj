@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AnalysisLevel>preview-all</AnalysisLevel>
+    <AnalysisMode>all</AnalysisMode>
+    <EnablePreviewFeatures>True</EnablePreviewFeatures>
+    <DebugType>embedded</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(CoreNoWarn)</NoWarn>
+    <RootNamespace>Subprocess.SatelliteExecutable</RootNamespace>
+
+    <PublishSingleFile>True</PublishSingleFile>
+    <PublishSelfContained>False</PublishSelfContained>
+    <PublishAot>False</PublishAot>
+    <PublishTrimmed>False</PublishTrimmed>
+    <PublishReadyToRun>False</PublishReadyToRun>
+    <PublishDir>..\Subprocess</PublishDir>
+    <AssemblyName>SatelliteExecutable$(Configuration)</AssemblyName>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+  <ItemGroup>
+      <ProjectReference Include="..\Subprocess.Core\Subprocess.Core.csproj" />
+  </ItemGroup>
+</Project>
