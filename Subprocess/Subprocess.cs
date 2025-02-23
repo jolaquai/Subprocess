@@ -2,8 +2,6 @@
 using System.IO.Pipes;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography.X509Certificates;
-using System.Threading.Tasks;
 
 using Subprocess.Core;
 
@@ -103,6 +101,7 @@ public class Subprocess
             // Initialize by unpacking the prepared worker executable from our own resources
             if (!File.Exists(_tempPath))
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(_tempPath));
                 using (var file = File.Create(_tempPath))
                 {
 #if DEBUG
@@ -134,8 +133,8 @@ public class Subprocess
 
         var pipeName = Guid.NewGuid().ToString();
         _pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-        Writer = new StreamWriter(_pipe);
-        Reader = new StreamReader(_pipe);
+        Writer = new StreamWriter(_pipe, leaveOpen: true);
+        Reader = new StreamReader(_pipe, leaveOpen: true);
 
         _process = new Process()
         {
@@ -149,10 +148,10 @@ public class Subprocess
                     base64args
                 },
                 UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                CreateNoWindow = true
+                RedirectStandardOutput = false,
+                RedirectStandardError = false,
+                RedirectStandardInput = false,
+                CreateNoWindow = false
             }
         };
     }

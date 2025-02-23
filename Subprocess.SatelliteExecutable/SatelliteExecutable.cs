@@ -19,18 +19,17 @@ internal class SatelliteExecutable
         using var pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         using var reader = new StreamReader(pipeClient, leaveOpen: true);
         using var writer = new StreamWriter(pipeClient, leaveOpen: true);
-        var connectionInit = Task.WhenAll(
-            pipeClient.ConnectAsync(),
-            Task.Run(async () =>
+        var connectionInit = Task.Run(async () =>
+        {
+            await pipeClient.ConnectAsync();
+
+            string temp;
+            do
             {
-                string temp;
-                do
-                {
-                    temp = await reader.ReadLineAsync();
-                }
-                while (temp != "{SYNC}");
-            })
-        );
+                temp = await reader.ReadLineAsync();
+            }
+            while (temp != "{SYNC}");
+        });
 
         var arguments = MessagePackUtil.Deserialize<object[]>(Convert.FromBase64String(args[2]));
         await connectionInit;
@@ -69,6 +68,9 @@ internal class SatelliteExecutable
         // Since there is nothing left to respond to an end signal, do some clean-up here, then exit
         cts.Cancel();
         await pipeDrain;
+
+        Console.ReadLine();
+
         return result;
     }
 }
